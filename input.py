@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 
-from math import pi, sin
+from math import pi, sin, sqrt
 import sounddevice as sd
 import numpy
 import time
 
 def schmidtTrigger(values):
-    riseThreshold = 0.5
-    fallThreshold = 0.4
+    riseThreshold = 0.6
+    fallThreshold = 0.5
     v = 0
     for x in values:
         if v == 0 and x > riseThreshold:
@@ -42,18 +42,25 @@ with sd.InputStream(
     sample, _ = stream.read(fs * 10)
     endT = time.time()
 
-    walsh = numpy.array([
+    walsh1 = numpy.array([
         (
             1 if int(i / halfperiod) % 2 else -1,
             0
         )
         for i in range(0, period * periodCount)
     ])
-    result = []
-    for i in range(0, len(sample)-1, len(walsh)):
-        result.append(
-            sum([e[0] for e in walsh * sample[i:i+len(walsh)]])
+    walsh2 = numpy.array([
+        (
+            1 if int(i / halfperiod + 0.25) % 2 else -1,
+            0
         )
+        for i in range(0, period * periodCount)
+    ])
+    result = []
+    for i in range(0, len(sample)-1, len(walsh1)):
+        t1 = [e[0] for e in walsh1 * sample[i:i+len(walsh1)]]
+        t2 = [e[0] for e in walsh2 * sample[i:i+len(walsh2)]]
+        result.append(sqrt(sum(t1) ** 2 + sum(t2) ** 2))
 
 maxV, minV = max(result), min(result)
 result = [(e - minV) / (maxV - minV) for e in result]

@@ -10,11 +10,24 @@ from .morse_code import getMorseData
 
 
 
+def pullLatencyFix(latencyFixer):
+    if not latencyFixer: return None
+    try:
+        fix = latencyFixer.get_nowait()
+        if not (0 <= fix <= 0.5):
+            return None # accept only fix between 0-500ms
+        print("New latency: %.1f ms" % (fix * 1000))
+        return fix
+    except:
+        return None
+
+
 def sendSignal(
     samplerate=SAMPLERATE,
     frequency=SIGNAL_FREQUENCY,
     dtype=DATATYPE,
-    latency_fix=0.010
+    latency_fix=0,
+    latency_fixer=None
 ):
     
     # 1. Prepare for signals
@@ -52,11 +65,19 @@ def sendSignal(
         dtype=dtype
     ) as stream:
 
+        def TimeGenerator():
+            nonlocal latency_fix
+            while True:
+                nowtime = time.time() + latency_fix
+                yield (
+                    int(nowtime / 60) % 60,
+                    int(nowtime) % 60,
+                    int(nowtime * 1000) % 1000
+                )
+        timeGen = TimeGenerator()
+
         while True:
-            nowtime = time.time() + latency_fix 
-            seconds = int(nowtime) % 60
-            milliseconds = int(nowtime * 1000) % 1000
-            minute = int(nowtime / 60) % 60
+            minute, seconds, milliseconds = next(timeGen)
 
             duration = 80 if seconds % 10 else 160
             if minute != currentMinute:
@@ -71,8 +92,14 @@ def sendSignal(
                 else:
                     continue
             else:
-                if milliseconds >= duration:
+                if milliseconds >= duration: # silent period
+                    if milliseconds < 750:
+                        # fix latency at silence time
+                        newFix = pullLatencyFix(latency_fixer)
+                        if newFix != None:
+                            latency_fix = newFix
+                        milliseconds = next(timeGen)[2]
                     data = signals[0][1000-milliseconds]
-                else:
+                else:   # sending period
                     data = signals[1][duration-milliseconds]
                 stream.write(data)

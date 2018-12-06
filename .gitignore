@@ -1,3 +1,4 @@
+*.ods
 *.sw?
 *\#
 __pycache__
