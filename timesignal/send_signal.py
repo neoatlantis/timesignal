@@ -14,9 +14,8 @@ def pullLatencyFix(latencyFixer):
     if not latencyFixer: return None
     try:
         fix = latencyFixer.get_nowait()
-        if not (0 <= fix <= 0.5):
-            return None # accept only fix between 0-500ms
-        print("New latency: %.1f ms" % (fix * 1000))
+        #if not (-0.03 <= fix <= 0.03):
+        #    return None
         return fix
     except:
         return None
@@ -58,7 +57,7 @@ def sendSignal(
 
     print("Start sending...")
 
-    with sd.RawOutputStream(
+    with sd.OutputStream(
         samplerate=samplerate,
         channels=2,
         latency="low",
@@ -79,15 +78,16 @@ def sendSignal(
         while True:
             minute, seconds, milliseconds = next(timeGen)
 
-            duration = 80 if seconds % 10 else 160
+            duration = SIGNAL_1SEC_MS if seconds % 10 else SIGNAL_10SEC_MS
             if minute != currentMinute:
-                duration = 500
+                duration = SIGNAL_MINUTE_MS 
                 currentMinute = minute
                 morseCodePlayed = False 
 
-            if 1 <= seconds < 10 and minute % 5 == 0:
+            if 1 <= seconds < SIGNAL_MORSE_CODE_SPACE_SEC and minute % 5 == 0:
                 if not morseCodePlayed:
-                    stream.write(0.5 * getMorseData(samplerate, 600, dtype=dtype))
+                    stream.write(0.5 * getMorseData(
+                        samplerate, MORSE_CODE_FREQUENCY, dtype=dtype))
                     morseCodePlayed = True
                 else:
                     continue
@@ -95,9 +95,13 @@ def sendSignal(
                 if milliseconds >= duration: # silent period
                     if milliseconds < 750:
                         # fix latency at silence time
-                        newFix = pullLatencyFix(latency_fixer)
-                        if newFix != None:
-                            latency_fix = newFix
+                        deltaFix = pullLatencyFix(latency_fixer)
+                        if deltaFix != None:
+                            latency_fix += deltaFix
+                            #if latency_fix > 0.05:
+                            #    print("Latency > 50ms: Fix failed? Reset to zero.")
+                            #    latency_fix = 0
+                            print("Current latency: %dms" % (latency_fix*1e3))
                         milliseconds = next(timeGen)[2]
                     data = signals[0][1000-milliseconds]
                 else:   # sending period
