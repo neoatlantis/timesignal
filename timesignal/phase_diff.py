@@ -7,8 +7,8 @@ def xorGate(array1, array2):
 
 def differentWindowFinder(diffWave):
     # Find slices[i:j] of all ones
-    maxI = len(diffWave)
-    i, j = 0, 0
+    maxI = len(diffWave) - 1
+    i, j = 1, 1
     while i < maxI:
         if diffWave[i]:
             j = i
@@ -18,15 +18,26 @@ def differentWindowFinder(diffWave):
         else:
             i += 1
 
+def isRisingEdge(series):
+    v = series[0]
+    if series[-1] <= series[0]: return False
+    for e in series:
+        if e < v: return False
+        v = e
+    return True
+
 def phaseDiff(inputWave, referenceWave, expected=10, maxLatencyInPeriods=10):
     outputs = []
     diffWave = [i for i in xorGate(referenceWave, inputWave)]
     print("\n")
     for i, j in differentWindowFinder(diffWave):
         if i < 1: continue
-        if not (referenceWave[i-1] == 0 and referenceWave[j+1] == 1):
+
+        if not isRisingEdge(referenceWave[i-1:j+1]):
             # not a rising edge in reference wave
             continue
+        if not isRisingEdge(inputWave[i-1:j+1]): continue
+
         if sum(inputWave[i:j]) > sum(referenceWave[i:j]):
             latency = -(j-i) # input wave goes earlier than reference
         else:

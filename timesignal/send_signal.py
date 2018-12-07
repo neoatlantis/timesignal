@@ -33,11 +33,12 @@ def sendSignal(
 
     signal_1_1ms = [(i, 0) for i in 
         [
-            sin(i / ONE_MILLISECOND_FRAMES * 2 * pi)
-            for i in range(0, ONE_MILLISECOND_FRAMES)
+            sin(i / ONE_MILLISECOND_FRAMES * 2 * pi) + 
+            sin(i / ONE_MILLISECOND_FRAMES * 4 * pi)
+            for i in range(0, ONE_MILLISECOND_FRAMES+1)
         ]
     ]
-    signal_0_1ms = [(0, 0) for i in range(0, ONE_MILLISECOND_FRAMES)]
+    signal_0_1ms = [(0, 0) for i in range(0, ONE_MILLISECOND_FRAMES+1)]
 
     # 2. Cache signals
 
@@ -98,9 +99,9 @@ def sendSignal(
                         deltaFix = pullLatencyFix(latency_fixer)
                         if deltaFix != None:
                             latency_fix += deltaFix
-                            #if latency_fix > 0.05:
-                            #    print("Latency > 50ms: Fix failed? Reset to zero.")
-                            #    latency_fix = 0
+                            if latency_fix > 0.1:
+                                print("Latency > 100ms: Fix failed? Reset to zero.")
+                                latency_fix = 0
                             print("Current latency: %dms" % (latency_fix*1e3))
                         milliseconds = next(timeGen)[2]
                     data = signals[0][1000-milliseconds]

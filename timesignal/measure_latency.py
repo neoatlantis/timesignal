@@ -1,23 +1,26 @@
 #!/usr/bin/env python3
 
-from math import pi, sin, sqrt
+from math import pi, sin, sqrt, log
 import sounddevice as sd
 import numpy
 import time
 
 from .constants import *
-from .walsh_filter import WalshFilter
+#from .walsh_filter import WalshFilter
+from .fft_filter import FourierFilter
 from .phase_diff import phaseDiff
 
+def andGate(array1, array2):
+    assert len(array1) == len(array2)
+    for i in range(0, len(array1)):
+        yield 1 if array1[i] and array2[i] else 0
 
-def schmidtTrigger(values):
-    riseThreshold = 0.6
-    fallThreshold = 0.5
+def schmidtTrigger(values, rise=0.6, fall=0.5):
     v = 0
     for x in values:
-        if v == 0 and x > riseThreshold:
+        if v == 0 and x > rise:
             v = 1
-        elif v == 1 and x < fallThreshold:
+        elif v == 1 and x < fall:
             v = 0
         yield v
 
@@ -28,7 +31,8 @@ def measureLatencyOnce(
     duration=10,
     frequency=SIGNAL_FREQUENCY,
     dtype=DATATYPE,
-    windowSizeAsPeriods=5
+    windowSizeAsPeriods=5,
+    verbose=False
 ):
 
     period = int(SAMPLERATE/SIGNAL_FREQUENCY)
@@ -36,8 +40,16 @@ def measureLatencyOnce(
     periodCount = windowSizeAsPeriods 
     windowSize = period * periodCount
 
-    walshFilter = WalshFilter(
+    """walshFilter = WalshFilter(
         framesPerPeriod=period, # e.g. period of 1kHz signal, in frames
+        windowSize=windowSize
+    )
+    walshFilter2 = WalshFilter(
+        framesPerPeriod=halfperiod,
+        windowSize=windowSize
+    )"""
+    fourierFilter = FourierFilter(
+        samplerate=samplerate,
         windowSize=windowSize
     )
 
@@ -50,18 +62,53 @@ def measureLatencyOnce(
         startT = time.time()
         sample, _ = stream.read(SAMPLERATE * duration)
         endT = time.time()
+        sample = numpy.array([e[0] for e in sample])
 
         result = []
+        result2 = []
         for i in range(0, len(sample)-1, windowSize):
+            fftmeasure = fourierFilter.measure(sample[i:i+windowSize])
+            result.append(fftmeasure(1000))
+            result2.append(fftmeasure(2000))
+
+        """for i in range(0, len(sample)-1, windowSize):
             result.append(walshFilter.measure(
                 [e[0] for e in sample[i:i+windowSize]]
             ))
+            result2.append(walshFilter2.measure(
+                [e[0] for e in sample[i:i+windowSize]]
+            ))"""
 
-    maxV, minV = max(result), min(result)
-    result = [(e - minV) / (maxV - minV) for e in result]
+    def normalize(s):
+        max1, min1 = max(s), min(s)
+        return [(e - min1) / (max1 - min1) for e in s]
 
+    a1 = normalize([abs(e) for e in result])
+    #p1 = normalize([e[1] for e in result])
+    a2 = normalize([abs(e) for e in result2])
+    #p2 = normalize([e[1] for e in result2])
+    #pd = normalize([p1[i] -p2[i] for i in range(0, len(result))])
+
+    covResult = normalize([a1[i] * a2[i] for i in range(0, len(result))])
+    covAverage = sum(covResult) / len(covResult)
+
+    riseT = min(covAverage * 10, 0.4)
+    fallT = max(riseT - 0.1, 0.1)
+
+    sampleSignal = list(schmidtTrigger(covResult, rise=riseT, fall=fallT))
+
+    if verbose:
+        for i in range(0, len(result)):
+            print(a1[i], a2[i], covResult[i], sampleSignal[i])
+        exit()
+
+    """
     # Use schmidt trigger to get a square wave
     filteredResult = [e for e in schmidtTrigger(result)]
+    filteredResult2 = [e for e in schmidtTrigger(result2)]
+
+    combinedResult = list(andGate(filteredResult, filteredResult2))
+    combinedResult = list(schmidtTrigger(covResult))"""
     
     # systemWave: expected time signal for comparing
     systemWave = [0] * len(result)
@@ -89,8 +136,8 @@ def measureLatencyOnce(
                 v = 1 if fictionTms < SIGNAL_10SEC_MS else 0
         systemWave[i] = v
     
-    diffPeriodsFound = phaseDiff(filteredResult, systemWave, expected=duration)
-    if None == diffPeriodsFound: return (0, 1)
+    diffPeriodsFound = phaseDiff(sampleSignal, systemWave, expected=duration)
+    if None == diffPeriodsFound: return (0, 0)
     return (
         diffPeriodsFound[0] * windowSizeAsPeriods / frequency,
         diffPeriodsFound[1]
@@ -121,7 +168,7 @@ def measureLatency(queue, **kvargs):
             else:
                 continue
 
-        print("Suggested fix: ", avg * 1000, "ms")
+        print("Suggested fix: %.1fms" % (avg * 1000))
         try:
             queue.put_nowait(avg)
             measurements = []
@@ -131,4 +178,4 @@ def measureLatency(queue, **kvargs):
 
 
 if __name__ == "__main__":
-    print("Measured latency: %.1fms" % (measureLatencyOnce() * 1e3))
+    measureLatencyOnce(verbose=True, duration=3, windowSizeAsPeriods=5)

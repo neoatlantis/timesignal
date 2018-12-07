@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from math import sqrt
+from math import sqrt, atan
 import numpy
 
 
@@ -19,6 +19,9 @@ class WalshFilter:
 
     def measure(self, series):
         assert len(series) == len(self.walsh1)
-        t1 = self.walsh1 * series
-        t2 = self.walsh2 * series
-        return sqrt(sum(t1) ** 2 + sum(t2) ** 2) # no average, sum value enough
+        t1 = sum(self.walsh1 * series)
+        t2 = sum(self.walsh2 * series)
+        return (
+            sqrt(t1 ** 2 + t2 ** 2), # no average, sum value enough,
+            atan(t1 / t2)
+        )
